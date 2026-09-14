@@ -2,7 +2,7 @@
 .venv/
 
 # Dataset
-data/
+/data/
 
 # Python cache
 __pycache__/
