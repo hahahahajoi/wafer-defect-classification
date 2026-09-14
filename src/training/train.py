@@ -1,7 +1,7 @@
 import torch
 import random
 import numpy as np
-
+import matplotlib.pyplot as plt
 seed = 42
 
 random.seed(seed)
@@ -9,11 +9,14 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
 
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 from tqdm import tqdm
 from src.models.baseline_cnn import BaselineCNN
 from sklearn.metrics import classification_report, f1_score
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-import matplotlib.pyplot as plt
+from src.training.losses import FocalLoss
 from src.data.dataloader import (
     create_train_loader,
     create_val_loader
@@ -70,9 +73,9 @@ class_weights = torch.tensor(
 
 print("Class Weights:", class_weights)
 
-criterion = torch.nn.CrossEntropyLoss(
-    weight=class_weights
-)
+#criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+#criterion = FocalLoss(gamma=2.0)
+criterion = torch.nn.CrossEntropyLoss()
 
 optimizer = torch.optim.Adam(
     model.parameters(),
@@ -166,7 +169,7 @@ for epoch in range(num_epochs):
 
         torch.save(
             model.state_dict(),
-            "outputs/models/best_model.pth"
+            "outputs/models/best_model_sampler.pth"
             )
 
     print(f"Validation Loss: {avg_val_loss:.4f}")
@@ -181,7 +184,7 @@ print(f"Best Macro F1: {best_macro_f1:.4f}")
 # Best Model 불러오기
 model.load_state_dict(
     torch.load(
-        "outputs/models/best_model.pth",
+        "outputs/models/best_model_sampler.pth",
         weights_only=True
     )
 )
@@ -231,6 +234,6 @@ disp = ConfusionMatrixDisplay(
 disp.plot(xticks_rotation=45, cmap="Blues")
 
 plt.tight_layout()
-plt.savefig("outputs/confusion_matrix.png", dpi=200)
+plt.savefig("outputs/confusion_matrix_sampler.png", dpi=200)
 
 plt.show()
