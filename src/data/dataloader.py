@@ -11,17 +11,17 @@ def create_train_loader(batch_size=32):
 
     train_dataset = WaferDataset(train_df)
     
-    class_counts = train_df["failureType"].value_counts()
+    # class_counts = train_df["failureType"].value_counts()
 
-    sample_weights = train_df["failureType"].map(lambda label: 1.0 / class_counts[label]).values
+    # sample_weights = train_df["failureType"].map(lambda label: 1.0 / class_counts[label]).values
 
-    sample_weights = torch.tensor(sample_weights,dtype=torch.double)
+    # sample_weights = torch.tensor(sample_weights,dtype=torch.double)
 
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True
-        )
+    # sampler = WeightedRandomSampler(
+    #     weights=sample_weights,
+    #     num_samples=len(sample_weights),
+    #     replacement=True
+    #     )
 
     generator = torch.Generator()
     generator.manual_seed(42)
@@ -29,7 +29,7 @@ def create_train_loader(batch_size=32):
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        sampler=sampler,            #shuffle=True,
+        shuffle=True,#sampler=sampler,
         generator=generator
     )
 

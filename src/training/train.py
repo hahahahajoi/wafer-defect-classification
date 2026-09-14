@@ -2,6 +2,7 @@ import torch
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+
 seed = 42
 
 random.seed(seed)
@@ -19,7 +20,8 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from src.training.losses import FocalLoss
 from src.data.dataloader import (
     create_train_loader,
-    create_val_loader
+    create_val_loader,
+    create_test_loader
 )
 
 device = torch.device(
@@ -41,6 +43,7 @@ print(model)
 # Class Weight 계산
 train_loader = create_train_loader(batch_size=32)
 val_loader = create_val_loader(batch_size=32)
+test_loader = create_test_loader(batch_size=32)
 
 class_counts = train_loader.dataset.dataframe["failureType"].value_counts()
 
@@ -73,18 +76,29 @@ class_weights = torch.tensor(
 
 print("Class Weights:", class_weights)
 
-#criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 #criterion = FocalLoss(gamma=2.0)
-criterion = torch.nn.CrossEntropyLoss()
+#criterion = torch.nn.CrossEntropyLoss()
 
 optimizer = torch.optim.Adam(
     model.parameters(),
     lr=0.001
 )
+
+# Learning Rate Scheduler
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer,
+    mode="max",
+    factor=0.5,
+    patience=2
+)
+
 # data 10번 반복 학습
-num_epochs = 10
+num_epochs = 30
 best_macro_f1 = 0.0
 best_epoch = 0
+patience = 6
+epochs_without_improvement = 0
 
 # train
 for epoch in range(num_epochs):
@@ -167,14 +181,28 @@ for epoch in range(num_epochs):
         best_macro_f1 = macro_f1
         best_epoch = epoch + 1
 
+        epochs_without_improvement = 0
+
         torch.save(
             model.state_dict(),
-            "outputs/models/best_model_sampler.pth"
+            "outputs/models/best_model_sqrt_scheduler.pth"
             )
+    else:
+        epochs_without_improvement += 1
+
+    scheduler.step(macro_f1)
 
     print(f"Validation Loss: {avg_val_loss:.4f}")
     print(f"Validation Accuracy: {val_accuracy:.2f}%")
     print(f"Macro F1: {macro_f1:.4f}")
+    current_lr = optimizer.param_groups[0]["lr"]
+    print(f"Learning Rate: {current_lr:.6f}")
+
+    if epochs_without_improvement >= patience:
+        print(f"Early Stopping at Epoch {epoch + 1}")
+        break
+
+    
 
 
 print("\nTraining Finished")
@@ -184,10 +212,30 @@ print(f"Best Macro F1: {best_macro_f1:.4f}")
 # Best Model 불러오기
 model.load_state_dict(
     torch.load(
-        "outputs/models/best_model_sampler.pth",
+        "outputs/models/best_model_sqrt_scheduler.pth",
         weights_only=True
     )
 )
+
+test_preds = []
+test_labels = []
+
+model.eval()
+
+# Best Model을 Test Loader에 불러옴
+with torch.no_grad():
+    for wafers, labels in tqdm(
+        test_loader,
+        desc="Test Evaluation"
+    ):
+        wafers = wafers.to(device)
+        labels = labels.to(device)
+
+        outputs = model(wafers)
+        predictions = outputs.argmax(dim=1)
+
+        test_preds.extend(predictions.cpu().tolist())
+        test_labels.extend(labels.cpu().tolist())
 
 model.eval()
 
@@ -234,6 +282,52 @@ disp = ConfusionMatrixDisplay(
 disp.plot(xticks_rotation=45, cmap="Blues")
 
 plt.tight_layout()
-plt.savefig("outputs/confusion_matrix_sampler.png", dpi=200)
+plt.savefig("outputs/confusion_matrix_sqrt_scheduler.png", dpi=200)
 
-plt.show()
+plt.close()
+
+# Test Set 최종 평가
+test_preds = []
+test_labels = []
+
+model.eval()
+
+with torch.no_grad():
+    for wafers, labels in tqdm(
+        test_loader,
+        desc="Test Evaluation"
+    ):
+        wafers = wafers.to(device)
+        labels = labels.to(device)
+
+        outputs = model(wafers)
+        predictions = outputs.argmax(dim=1)
+
+        test_preds.extend(predictions.cpu().tolist())
+        test_labels.extend(labels.cpu().tolist())
+
+# TEST 결과
+test_accuracy = (
+    sum(p == y for p, y in zip(test_preds, test_labels))
+    / len(test_labels)
+    * 100
+)
+
+test_macro_f1 = f1_score(
+    test_labels,
+    test_preds,
+    average="macro"
+)
+
+print("\nTest Results")
+print(f"Test Accuracy: {test_accuracy:.2f}%")
+print(f"Test Macro F1: {test_macro_f1:.4f}")
+
+print(
+    classification_report(
+        test_labels,
+        test_preds,
+        target_names=class_order,
+        digits=4
+    )
+)
